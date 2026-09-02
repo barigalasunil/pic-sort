@@ -982,8 +982,10 @@ def main() -> None:
                     except Exception as exc:  # noqa: BLE001
                         panel["errors"] += 1
                         _bump_type_counts(type_counts, file_path.suffix, cfg)
-                        cur = Text(f"ERROR {file_path}: {exc}", style=RED)
-                        activity_lines.append(cur)
+                        errl = Text("-> ", style=cfg["accent"])
+                        errl.append(Text(f"ERROR {file_path}: {exc}", style=RED))
+                        errl.append("\n")
+                        activity_lines.append(errl)
                         live.update(_build_layout(
                             cfg, left, _right_panel(
                                 cfg, panel, type_counts, activity_lines, total, i,
