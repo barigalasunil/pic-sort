@@ -726,8 +726,8 @@ def print_logo() -> None:
     CONSOLE.print()
 
 
-def print_summary(panel: dict, cfg, type_counts, elapsed) -> None:
-    """Boxed summary panel (rich Panel) in the Matrix theme."""
+def _summary_panel(cfg, panel: dict, type_counts: dict, elapsed) -> Panel:
+    """Build the end-of-run summary as a reusable rich Panel (does not print)."""
     table = Table(show_header=False, box=box.SIMPLE, padding=(0, 2), expand=True)
     table.add_column("key")
     table.add_column("value", justify="right")
@@ -749,11 +749,15 @@ def print_summary(panel: dict, cfg, type_counts, elapsed) -> None:
             Text(str(value), style=color) if color else Text(str(value)),
         )
 
-    CONSOLE.print()
-    CONSOLE.print(Panel(table, title=f"[{GREEN}] Summary - {cfg['label']}",
-                        border_style=GREEN, box=box.ASCII, expand=True))
+    return Panel(table, title=f"[{GREEN}] Summary - {cfg['label']}",
+                 border_style=GREEN, box=box.ASCII, expand=True)
 
-    # Per-type totals line in the summary too.
+
+def print_summary(panel, cfg, type_counts, elapsed) -> None:
+    """Print the boxed summary panel plus the per-type totals line."""
+    CONSOLE.print()
+    CONSOLE.print(_summary_panel(cfg, panel, type_counts, elapsed))
+
     parts = []
     for kind, info in cfg["types"].items():
         parts.append(Text(f"{info['label']}: {type_counts.get(kind, 0)}", style=info["color"]))
