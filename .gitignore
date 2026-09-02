@@ -5,7 +5,6 @@ build/
 
 # Runtime artifacts (created next to the exe / in repo)
 tools/
-last_used.json
 fallback_used.log
 *.log
 

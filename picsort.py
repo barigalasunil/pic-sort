@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """
-PicSort - organize your entire photo & video library by date, automatically.
+PicSort - organize photos, videos, and documents by date, automatically.
 
 PicSort is a single-file, terminal-based tool that:
   * Recursively scans one or more source folders.
-  * Reads each file's capture date from EXIF/MOV metadata via ExifTool.
+  * Reads each file's capture/creation date from metadata via ExifTool.
   * Copies every file (never moves, never renames beyond collision suffixes)
     into a single destination merged into:  <Dest>/YYYY/MonthName/DD/.
   * De-duplicates via hashing so repeated / multi-source runs stay safe.
+
+Two modes (soon to be combinable):
+  * Media     - photos (.jpg .png .heic .raw ...) and videos (.mp4 .mov ...)
+  * Documents - PDF, Word, Excel, PowerPoint
+
+Each mode is described by an entry in MODE_CONFIGS (extensions, date-tag
+priority, icon, accent color, per-type colors), so a future *combined*
+mode can be added without restructuring the core scan/copy logic.
 
 Packaged as a single portable .exe with PyInstaller (see build.bat). On first
 run the tool auto-downloads ExifTool into a `tools/` folder next to the exe.
@@ -17,13 +25,13 @@ Early tool-cancel:  Ctrl+C at any prompt or during processing.
 
 import datetime
 import hashlib
-import json
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -32,37 +40,18 @@ try:
 except ImportError:
     requests = None
 
-try:
-    from colorama import just_fix_windows_console
-    just_fix_windows_console()
-except Exception:
-    pass
+from rich import box
+from rich.console import Console, Group
+from rich.layout import Layout
+from rich.live import Live
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress
+from rich.table import Table
+from rich.text import Text
 
 # ---------------------------------------------------------------------------
 # Constants / configuration
 # ---------------------------------------------------------------------------
-
-# ExifTool metadata tags to try, in priority order.
-DATE_TAGS = [
-    "DateTimeOriginal",
-    "CreateDate",
-    "MediaCreateDate",
-    "TrackCreateDate",
-    "CreationDate",
-]
-
-# Image file extensions we care about.
-IMAGE_EXTS = {
-    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff",
-    ".webp", ".heic", ".heif", ".avif", ".raw", ".cr2", ".nef",
-    ".arw", ".dng", ".insv", ".insp",   # Insta360
-}
-
-# Video file extensions we care about.
-VIDEO_EXTS = {
-    ".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".m4v",
-    ".3gp", ".webm", ".mts", ".m2ts",   # camcorder / GoPro AVCHD
-}
 
 # Files larger than this get a fast partial hash (size + first+last 1MB)
 # instead of a full SHA-256, to keep dedup fast on multi-GB videos.
@@ -71,13 +60,128 @@ PARTIAL_HASH_CHUNK = 1024 * 1024             # 1 MB each end
 
 EXIFTOOL_PAGE_URL = "https://exiftool.org/"  # homepage scraped to find the current download URL
 
-GREEN = "\x1b[32m"
-DIM_GREEN = "\x1b[32;2m"
-YELLOW = "\x1b[33m"
-RED = "\x1b[31m"
-CYAN = "\x1b[36m"
-RESET = "\x1b[0m"
-BOLD = "\x1b[1m"
+# Every file is copied into <Dest>/YYYY/MonthName/DD regardless of source.
+TABLE_HEADERS = ("Copied", "Duplicates", "Fallback", "Errors")
+
+# Image file extensions.
+IMAGE_EXTS = {
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff",
+    ".webp", ".heic", ".heif", ".avif", ".raw", ".cr2", ".nef",
+    ".arw", ".dng", ".insv", ".insp",   # Insta360
+}
+
+# Video file extensions.
+VIDEO_EXTS = {
+    ".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".m4v",
+    ".3gp", ".webm", ".mts", ".m2ts",   # camcorder / GoPro AVCHD
+}
+
+# Document file extensions.
+DOCUMENT_EXTS = {
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+}
+
+# ExifTool priority order for reading a file's date in each mode.
+# Media mode reads the *capture* date (EXIF/MOV metadata).
+MEDIA_DATE_TAGS = [
+    "DateTimeOriginal",
+    "CreateDate",
+    "MediaCreateDate",
+    "TrackCreateDate",
+    "CreationDate",
+]
+
+# Documents use *creation* date as primary. Different document formats expose
+# it under different tags (PDF: CreateDate / PDF:ModifyDate; Office OpenXML
+# and OLE binary docs expose CreateDate / CreateTime / CreationDate). These
+# are all creation-oriented; we never prefer a "modified" tag over creation.
+DOCS_DATE_TAGS = [
+    "CreateDate",
+    "CreateTime",
+    "CreationDate",
+    "DateCreated",
+]
+
+# ASCII art rendered per mode (icon of the day) and the startup wordmark.
+LOGO_ART = r"""
+  ____ ___ ____     ____   ___  ____ _____
+ |  _ \_ _/ ___|   / ___| / _ \|  _ \_   _|
+ | |_) | | |   ____\___ \| | | | |_) || |
+ |  __/| | |__|_____|__) | |_| |  _ < | |
+ |_|  |___\____|   |____/ \___/|_| \_\|_|
+"""
+
+CAMERA_ICON = r"""
+  ____________
+ /____________\
+ ||          ||
+ ||  ______  ||
+ || |  ()  | ||
+ || |______| ||
+ ||          ||
+ ||__________||
+ \____________/
+"""
+
+FOLDER_ICON = r"""
+  .---------.
+ /  _____   \
+|  |     |  |
+|  |     |  |
+|  |     |  |
+|  |_____|  |
+ \  _____   /
+  '---------'
+"""
+
+# ---------------------------------------------------------------------------
+# Mode configuration.  Add a mode here (or a combined one) without touching
+# the core scan/copy path - the driver only reads "extensions"/"date_tags".
+# ---------------------------------------------------------------------------
+
+MODE_CONFIGS = {
+    "media": {
+        "label": "Media (Photos & Videos)",
+        "extensions": IMAGE_EXTS | VIDEO_EXTS,
+        "date_tags": MEDIA_DATE_TAGS,
+        "icon": CAMERA_ICON,
+        "accent": "bright_green",
+        "dim": "bright_black",
+        "types": {
+            "photo": {"exts": IMAGE_EXTS,  "color": "bright_green", "label": "Photos"},
+            "video": {"exts": VIDEO_EXTS,  "color": "bright_blue",  "label": "Videos"},
+        },
+    },
+    "documents": {
+        "label": "Documents (PDF, Word, Excel, PowerPoint)",
+        "extensions": DOCUMENT_EXTS,
+        "date_tags": DOCS_DATE_TAGS,
+        "icon": FOLDER_ICON,
+        "accent": "bright_cyan",
+        "dim": "bright_black",
+        "types": {
+            "pdf":     {"exts": {".pdf"},               "color": "orange1",    "label": "PDF"},
+            "word":    {"exts": {".doc", ".docx"},      "color": "bright_blue", "label": "Word"},
+            "excel":   {"exts": {".xls", ".xlsx"},      "color": "bright_green","label": "Excel"},
+            "ppt":     {"exts": {".ppt", ".pptx"},      "color": "bright_magenta","label": "PowerPoint"},
+        },
+    },
+}
+
+# Type lookup: suffix -> (kind key, config) built once from MODE_CONFIGS.
+_TYPE_BY_EXT: dict = {}
+for _cfg in MODE_CONFIGS.values():
+    for _kind, _info in _cfg["types"].items():
+        for _ext in _info["exts"]:
+            _TYPE_BY_EXT.setdefault(_ext, (_kind, _info["label"], _info["color"]))
+
+GREEN = "bright_green"
+YELLOW = "yellow"
+RED = "bright_red"
+CYAN = "bright_cyan"
+DIM = "bright_black"
+
+CONSOLE = Console()
 
 
 # ---------------------------------------------------------------------------
@@ -102,61 +206,8 @@ def tools_exiftool() -> Path:
     return app_dir() / "tools" / "exiftool.exe"
 
 
-def last_used_path() -> Path:
-    return app_dir() / "last_used.json"
-
-
 def fallback_log_path() -> Path:
     return app_dir() / "fallback_used.log"
-
-
-# ---------------------------------------------------------------------------
-# Matrix-style terminal UI helpers
-# ---------------------------------------------------------------------------
-
-def c(color: str, text: str) -> str:
-    """Wrap text in an ANSI color for terminals that support it."""
-    return f"{color}{text}{RESET}"
-
-
-def print_banner() -> None:
-    """Stylized ASCII PIC-SORT banner in bright green."""
-    banner = r"""
-  ____ ___ ____     ____   ___  ____ _____ 
- |  _ \_ _/ ___|   / ___| / _ \|  _ \_   _|
- | |_) | | |   ____\___ \| | | | |_) || |  
- |  __/| | |__|_____|__) | |_| |  _ < | |  
- |_|  |___\____|   |____/ \___/|_| \_\|_|  
-"""
-    print(c(GREEN, banner))
-    print(c(GREEN, BOLD + "  sort your entire photo & video library by date, automatically"))
-    print(c(DIM_GREEN, "  " + "=" * 62))
-    print()
-
-
-def print_summary(panel: dict) -> None:
-    """Boxed summary panel in the Matrix theme."""
-    width = 56
-    print()
-    print(c(GREEN, "  " + "+" + "-" * (width - 2) + "+"))
-    print(c(GREEN, "  |") + c(CYAN, BOLD + "  Summary".ljust(width - 4)) + c(GREEN, "|"))
-    print(c(GREEN, "  |" + " " * (width - 2) + "|"))
-
-    rows = [
-        ("Source folders scanned", str(panel["sources"])),
-        ("Files scanned", str(panel["scanned"])),
-        ("Files copied", str(panel["copied"])),
-        ("Skipped (duplicates)", str(panel["duplicates"])),
-        ("Fallback date used", str(panel["fallback"])),
-        ("Errors", str(panel["errors"])),
-    ]
-    for label, value in rows:
-        color = YELLOW if label.startswith("Errors") else GREEN
-        line = f"  |  {label:<22}{value:>24}  |"
-        print(c(GREEN, "  |") + c(color, line.strip(" |")) + c(GREEN, "  |"))
-    print(c(GREEN, "  |" + " " * (width - 2) + "|"))
-    print(c(GREEN, "  " + "+" + "-" * (width - 2) + "+"))
-    print()
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +224,7 @@ def ensure_exiftool() -> Path:
     if exe.exists():
         return exe
 
-    print(c(GREEN, "First-time setup: downloading ExifTool..."))
+    console_print(f"First-time setup: downloading ExifTool...", GREEN)
     if requests is None:
         _manual_fallback("requests module not available (re-install with: pip install requests)")
         sys.exit(1)
@@ -182,7 +233,7 @@ def ensure_exiftool() -> Path:
     try:
         url = _discover_exiftool_url()
         zip_path = tmp / "exiftool.zip"
-        print(c(GREEN, f"  Downloading from {url} ..."))
+        console_print(f"  Downloading from {url} ...", GREEN)
         resp = requests.get(url, stream=True, timeout=120)
         resp.raise_for_status()
         with open(zip_path, "wb") as f:
@@ -205,10 +256,7 @@ def ensure_exiftool() -> Path:
         # IMPORTANT: the Windows exe (exiftool(-k).exe) is a small launcher
         # that REQUIRES its companion "exiftool_files" folder alongside it.
         # So we install the entire extracted distribution into tools/, then
-        # rename the launcher to exiftool.exe in place. Result:
-        #   tools/exiftool.exe
-        #   tools/exiftool_files/
-        #   tools/README.txt
+        # rename the launcher to exiftool.exe in place.
         src_root = src.parent
         tools_dir = app_dir() / "tools"
         tools_dir.mkdir(exist_ok=True)
@@ -221,7 +269,7 @@ def ensure_exiftool() -> Path:
 
         e = tools_dir / "exiftool.exe"
         shutil.move(tools_dir / src.name, e)  # rename exiftool(-k).exe -> exiftool.exe
-        print(c(GREEN, f"  Installed ExifTool -> {e}"))
+        console_print(f"  Installed ExifTool -> {e}", GREEN)
         return e
     except (OSError, requests.RequestException, ValueError) as exc:
         _manual_fallback(str(exc))
@@ -231,21 +279,12 @@ def ensure_exiftool() -> Path:
 
 
 def _discover_exiftool_url() -> str:
-    """Dynamically find the current Windows 64-bit ExifTool download URL.
-
-    Rather than hardcoding a version number in the URL (exiftool.org rotates
-    versions and old URLs go 404), we fetch the homepage and extract the href
-    of the "64-bit" Windows executable zip (e.g. exiftool-13.59_64.zip).
-    Download links currently point at SourceForge; requests follows the
-    redirect to the actual file. Raises ValueError if the link can't be found.
-    """
-    print(c(GREEN, f"  Fetching {EXIFTOOL_PAGE_URL} to find current version ..."))
+    """Dynamically find the current Windows 64-bit ExifTool download URL."""
+    console_print(f"  Fetching {EXIFTOOL_PAGE_URL} to find current version ...", GREEN)
     resp = requests.get(EXIFTOOL_PAGE_URL, timeout=60)
     resp.raise_for_status()
     html = resp.text
 
-    # The 64-bit Windows link looks like:
-    #   <a href=".../exiftool-<ver>_64.zip/download"> exiftool-<ver>_64.zip</a>
     match = re.search(r'href="([^"]*exiftool-\d+(?:\.\d+)+_64\.zip[^"]*)"', html, re.IGNORECASE)
     if not match:
         raise ValueError("could not find the Windows 64-bit ExifTool download link on the page")
@@ -253,30 +292,29 @@ def _discover_exiftool_url() -> str:
 
 
 def _manual_fallback(reason: str) -> None:
-    print(c(RED, f"\n  [!] ExifTool download failed: {reason}"))
-    print(c(YELLOW, "  Manual setup required. Please:"))
-    print(c(YELLOW, "    1. Download the 'Windows Executable' zip from:  https://exiftool.org/"))
-    print(c(YELLOW, "       (use the 64-bit one, e.g. exiftool-<version>_64.zip)"))
-    print(c(YELLOW, "    2. Extract the whole ZIP (keep the 'exiftool_files' folder!)"))
-    print(c(YELLOW, "    3. Copy the exe AND its 'exiftool_files' folder into a 'tools' dir"))
-    print(c(YELLOW, "       next to PicSort.exe, renaming exiftool(-k).exe -> exiftool.exe:"))
-    print(c(YELLOW, f"       -> {tools_exiftool()}"))
-    print(c(YELLOW, "       -> exiftool_files\\  (must sit right beside exiftool.exe)"))
-    print(c(YELLOW, "  Then re-run PicSort."))
+    console_print(f"\n  [!] ExifTool download failed: {reason}", RED)
+    console_print("  Manual setup required. Please:", YELLOW)
+    console_print("    1. Download the 'Windows Executable' zip from:  https://exiftool.org/", YELLOW)
+    console_print("       (use the 64-bit one, e.g. exiftool-<version>_64.zip)", YELLOW)
+    console_print("    2. Extract the whole ZIP (keep the 'exiftool_files' folder!)", YELLOW)
+    console_print("    3. Copy the exe AND its 'exiftool_files' folder into a 'tools' dir", YELLOW)
+    console_print("       next to PicSort.exe, renaming exiftool(-k).exe -> exiftool.exe:", YELLOW)
+    console_print(f"       -> {tools_exiftool()}", YELLOW)
+    console_print("       -> exiftool_files\\  (must sit right beside exiftool.exe)", YELLOW)
+    console_print("  Then re-run PicSort.", YELLOW)
 
 
 # ---------------------------------------------------------------------------
 # ExifTool metadata reading
 # ---------------------------------------------------------------------------
 
-def read_capture_date(file_path: Path) -> datetime.datetime | None:
-    """Read the capture date of an image/video via ExifTool.
+def read_capture_date(file_path: Path, tags) -> datetime.datetime | None:
+    """Read a file's date via ExifTool.
 
-    Tags are checked in DATE_TAGS priority order; the first parseable value
+    `tags` is the mode's date-tag priority list; the first parseable value
     wins. Returns a naive datetime or None if nothing usable was found.
     """
     exe = tools_exiftool()
-    tags = DATE_TAGS
     tag_args = []
     for t in tags:
         tag_args += ["-" + t]
@@ -302,11 +340,7 @@ def read_capture_date(file_path: Path) -> datetime.datetime | None:
 
 
 def _parse_exif_datetime(value: str) -> datetime.datetime | None:
-    """Parse an EXIF-ish datetime string; tolerant of common quirks.
-
-    Handles the classic "2024:08:26 14:30:00" colon format, ISO-style with a
-    'T' separator, fractional seconds, and trailing timezone suffixes.
-    """
+    """Parse an EXIF-ish datetime string; tolerant of common quirks."""
     text = value.strip()
     # Common EXIF style uses colons between date parts:  2024:08:26 14:30:00
     text = re.sub(r"^(\d{4}):(\d{2}):(\d{2})", r"\1-\2-\3", text)
@@ -385,11 +419,7 @@ def unique_copy_path(dest_day_dir: Path, filename: str, src_identity) -> Path | 
 
 
 def _candidate_names(dest_day_dir: Path, filename: str):
-    """Yield candidate destination names: exact, then _1, _2, ... before ext.
-
-    Bounded to a generous maximum to avoid an infinite loop if a day-folder
-    somehow holds >10000 files sharing one base name.
-    """
+    """Yield candidate destination names: exact, then _1, _2, ... before ext."""
     p = Path(filename)
     stem, ext = p.stem, p.suffix
     yield dest_day_dir / filename
@@ -428,36 +458,15 @@ def cache_put(day_dir: Path, filename: Path, identity) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Last-used persistence
-# ---------------------------------------------------------------------------
-
-def load_last_used():
-    try:
-        with open(last_used_path(), "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return {}
-
-
-def save_last_used(sources, destination):
-    try:
-        with open(last_used_path(), "w", encoding="utf-8") as f:
-            json.dump({"sources": sources, "destination": destination}, f, indent=2)
-    except OSError:
-        pass
-
-
-# ---------------------------------------------------------------------------
 # Source scanning
 # ---------------------------------------------------------------------------
 
-def scan_sources(sources):
-    """Yield every image/video file under the given source folders."""
-    exts = IMAGE_EXTS | VIDEO_EXTS
+def scan_sources(sources, extensions):
+    """Yield every file under the given source folders with a matching ext."""
     for src in sources:
         for root, _dirs, files in os.walk(src):
             for name in files:
-                if Path(name).suffix.lower() in exts:
+                if Path(name).suffix.lower() in extensions:
                     yield Path(root) / name
 
 
@@ -474,6 +483,183 @@ def log_fallback(path, dt) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Rich UI helpers
+# ---------------------------------------------------------------------------
+
+def console_print(text="", style="", **kwargs):
+    """Print a plain (non-live) line, optionally styled with a rich color."""
+    if isinstance(text, Text):
+        CONSOLE.print(text, **kwargs)
+    elif style:
+        CONSOLE.print(Text(str(text), style=style), **kwargs)
+    else:
+        CONSOLE.print(str(text), **kwargs)
+
+
+def _human_bytes(n: int) -> str:
+    n = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            return f"{n:.1f} {unit}" if unit != "B" else f"{int(n)} B"
+        n /= 1024
+    return str(n)
+
+
+def _drive_free(path: Path):
+    """Return (free, total) bytes for the disk holding `path`, or None."""
+    try:
+        root = path if path.is_dir() else path.parent
+        u = shutil.disk_usage(root)
+        return u.free, u.total
+    except OSError:
+        return None
+
+
+def _type_lookup(ext: str):
+    """Map a lowercase extension to (kind, label, color) or None."""
+    info = _TYPE_BY_EXT.get(ext.lower())
+    if info:
+        return info
+    # fall back: any file we scan belongs to the active mode, give it generic
+    return None
+
+
+def _current_file_line(file_path: Path, day_rel: str, status: str,
+                       is_fallback: bool, color: str, mode_cfg) -> Text:
+    """Build the colored single-file progress line shown in the live panel."""
+    name = file_path.name
+    base = Text()
+    if is_fallback:
+        base.append(name, style=f"{YELLOW}")
+        base.append(f"  (fallback date)", style=YELLOW)
+    else:
+        base.append(name, style=color)
+    base.append(f"  ->  {day_rel}", style="dim")
+    if status == "dup":
+        base.append("  (dup)", style=YELLOW)
+    return base
+
+
+def _per_type_table(type_counts: dict, mode_cfg) -> Table:
+    """Table of running totals per file type, colored per type."""
+    table = Table(show_header=False, box=box.SIMPLE, pad_edge=False, expand=True)
+    table.add_column("type")
+    table.add_column("count", justify="right")
+    for kind, info in mode_cfg["types"].items():
+        n = type_counts.get(kind, 0)
+        tbl_label = Text(f" {info['label']}", style=info["color"])
+        table.add_row(tbl_label, Text(str(n), style=info["color"]))
+    return table
+
+
+def _stats_table(cfg, counts: dict, total_files: int, processed: int,
+                 elapsed: float, drive_src, drive_dest) -> Table:
+    """Right-panel stats grid: progress, counters, elapsed, drive space."""
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(justify="left")
+    grid.add_column(justify="right")
+
+    pct = (processed / total_files) if total_files else 0.0
+    grid.add_row(
+        Text("Processed", style="bold"),
+        Text(f"{processed} / {total_files}   ({pct*100:.1f}%)", style="bold"),
+    )
+    grid.add_row(Text("Copied", style=GREEN), Text(str(counts["copied"]), style=GREEN))
+    grid.add_row(Text("Duplicates", style=YELLOW), Text(str(counts["duplicates"]), style=YELLOW))
+    grid.add_row(Text("Fallback date", style="yellow"), Text(str(counts["fallback"]), style="yellow"))
+    grid.add_row(Text("Errors", style=RED), Text(str(counts["errors"]), style=RED))
+    grid.add_row(Text("Elapsed", style=CYAN), Text(_fmt_elapsed(elapsed), style=CYAN))
+
+    if drive_src:
+        free_src = _human_bytes(drive_src[0])
+        grid.add_row(Text("Source free", style="dim"), Text(free_src, style="dim"))
+    if drive_dest:
+        free_dest = _human_bytes(drive_dest[0])
+        grid.add_row(Text("Dest free", style="dim"), Text(free_dest, style="dim"))
+
+    return grid
+
+
+def _fmt_elapsed(seconds: float) -> str:
+    m, s = divmod(int(seconds), 60)
+    h, m = divmod(m, 60)
+    if h:
+        return f"{h}h {m:02d}m {s:02d}s"
+    return f"{m:02d}m {s:02d}s"
+
+
+def _progress_renderable(processed: int, total: int, style: str) -> Progress:
+    progress = Progress(
+        BarColumn(bar_width=None, style=style),
+        "[progress.percentage]{task.percentage:>3.0f}%",
+        console=CONSOLE,
+        expand=True,
+    )
+    task = progress.add_task("", total=total)
+    progress.update(task, completed=processed)
+    return progress
+
+
+def _right_panel(cfg, counts, type_counts, current_line, total, processed,
+                 start, drive_src, drive_dest) -> Panel:
+    elapsed = time.time() - start
+
+    body = Group(
+        _progress_renderable(processed, total, cfg["accent"]),
+        Text(),  # spacer
+        current_line if current_line is not None else Text("Scanning ...", style="dim"),
+        Text(),
+        _stats_table(cfg, counts, total, processed, elapsed, drive_src, drive_dest),
+        Text("Per type:", style="bold"),
+        _per_type_table(type_counts, cfg),
+    )
+    return Panel(
+        body,
+        title=f"[{cfg['accent']}] Session - {cfg['label']}",
+        border_style=cfg["accent"],
+        box=box.ASCII,
+        expand=True,
+    )
+
+
+def _left_panel(cfg) -> Panel:
+    """Narrow left panel: the mode icon rendered in the accent color."""
+    t = Text(cfg["icon"], style=cfg["accent"])
+    return Panel(
+        t,
+        title=f"[{cfg['accent']}] {cfg['label'].split('(')[0].strip()}",
+        border_style=cfg["accent"],
+        box=box.ASCII,
+        expand=True,
+    )
+
+
+def _build_layout(cfg, left: Panel, right: Panel) -> Layout:
+    layout = Layout(name="root")
+    layout.split_row(
+        Layout(left, name="left", ratio=2),
+        Layout(right, name="right", ratio=3),
+    )
+    return layout
+
+
+def _legend(mode_cfg) -> Text:
+    """One-time color legend for the active mode's file types."""
+    t = Text("Legend:  ")
+    first = True
+    for kind, info in mode_cfg["types"].items():
+        if not first:
+            t.append("   ")
+        first = False
+        t.append(f"# {info['label']}", style=info["color"])
+    t.append("   ")
+    t.append("# fallback", style=YELLOW)
+    t.append("   ")
+    t.append("# error", style=RED)
+    return t
+
+
+# ---------------------------------------------------------------------------
 # Main interactive flow
 # ---------------------------------------------------------------------------
 
@@ -483,17 +669,110 @@ def prompt_input(prompt: str, default: str = "") -> str:
     return input(prompt).strip()
 
 
+def select_mode() -> str:
+    """Ask the user which mode to run and return its MODE_CONFIGS key."""
+    keys = list(MODE_CONFIGS)  # insertion order -> Media [1], Documents [2]
+    prompt_lines = ["", "  Select mode:"]
+    for i, k in enumerate(keys, 1):
+        prompt_lines.append(f"    [{i}] {MODE_CONFIGS[k]['label']}")
+    CONSOLE.print(Text("\n".join(prompt_lines), style=GREEN))
+    while True:
+        choice = input(f"  Mode [1-{len(keys)}]: ").strip()
+        if choice.isdigit() and 1 <= int(choice) <= len(keys):
+            return keys[int(choice) - 1]
+        CONSOLE.print(Text("  Invalid choice. Please try again.", style=YELLOW))
+
+
+def print_logo() -> None:
+    CONSOLE.print()
+    CONSOLE.print(Text(LOGO_ART, style=GREEN))
+    CONSOLE.print(Text("  sort your entire photo, video & document library by date, automatically",
+                       style=f"bold {GREEN}"))
+    CONSOLE.print(Text("  " + "=" * 62, style="dim"))
+    CONSOLE.print()
+
+
+def print_summary(panel: dict, cfg, type_counts, elapsed) -> None:
+    """Boxed summary panel (rich Panel) in the Matrix theme."""
+    table = Table(show_header=False, box=box.SIMPLE, padding=(0, 2), expand=True)
+    table.add_column("key")
+    table.add_column("value", justify="right")
+
+    rows = [
+        ("Mode", f"{cfg['label']}"),
+        ("Source folders scanned", str(panel["sources"])),
+        ("Files scanned", str(panel["scanned"])),
+        ("Files copied", str(panel["copied"])),
+        ("Skipped (duplicates)", str(panel["duplicates"])),
+        ("Fallback date used", str(panel["fallback"])),
+        ("Errors", str(panel["errors"])),
+        ("Elapsed", _fmt_elapsed(elapsed)),
+    ]
+    for label, value in rows:
+        color = RED if label.startswith("Errors") else (GREEN if label == "Mode" else None)
+        table.add_row(
+            Text(label, style="bold" if label == "Mode" else None),
+            Text(str(value), style=color) if color else Text(str(value)),
+        )
+
+    CONSOLE.print()
+    CONSOLE.print(Panel(table, title=f"[{GREEN}] Summary - {cfg['label']}",
+                        border_style=GREEN, box=box.ASCII, expand=True))
+
+    # Per-type totals line in the summary too.
+    parts = []
+    for kind, info in cfg["types"].items():
+        parts.append(Text(f"{info['label']}: {type_counts.get(kind, 0)}", style=info["color"]))
+    sep = Text("    ")
+    line = Text()
+    for i, p in enumerate(parts):
+        if i:
+            line.append_text(sep)
+        line.append_text(p)
+    CONSOLE.print(line)
+    CONSOLE.print()
+
+
+def _exit_prompt() -> None:
+    input(f"\x1b[32mPress Enter to exit...\x1b[0m")
+
+
+def _rel(dest: Path, day_dir: Path) -> str:
+    """Return the display sub-path of a day folder (e.g. 2026/August/26)."""
+    try:
+        return str(day_dir.relative_to(dest)).replace("\\", "/")
+    except ValueError:
+        return str(day_dir)
+
+
+def _copy_one(file_path: Path, day_dir: Path):
+    """Copy a single file handling dedup + collision rename.
+
+    Returns (status, day_dir, err_msg) where status is one of
+    "copied"/"dup"/"err", day_dir is the destination day folder (a Path), and
+    err_msg is the OSError text when status == "err" else None.
+    """
+    try:
+        src_identity = file_identity(file_path)
+        target = unique_copy_path(day_dir, file_path.name, src_identity)
+        if target is None:
+            return "dup", day_dir, None
+        shutil.copy2(file_path, target)
+        return "copied", day_dir, None
+    except OSError as exc:
+        return "err", day_dir, exc
+
+
 def main() -> None:
-    print_banner()
+    print_logo()
+    mode = select_mode()
+    cfg = MODE_CONFIGS[mode]
+
     ensure_exiftool()
 
-    last = load_last_used()
-    default_src = ", ".join(last.get("sources", []))
-    default_dst = last.get("destination", "")
-
     # --- Source input -----------------------------------------------------
-    raw = prompt_input("Enter source folder path(s) (separate multiple with commas): ", default_src).strip()
-    source_raw = raw or default_src
+    raw = prompt_input("Enter source folder path(s) (separate multiple with commas): ").strip()
+    source_raw = raw
     candidates = [s.strip().strip('"').strip("'") for s in source_raw.split(",")]
     sources = []
     for s in candidates:
@@ -503,101 +782,164 @@ def main() -> None:
         if p.is_dir():
             sources.append(p)
         else:
-            print(c(YELLOW, f"  [!] Warning: source folder not found, skipping: {s}"))
+            console_print(f"  [!] Warning: source folder not found, skipping: {s}", YELLOW)
 
     if not sources:
-        print(c(RED, "  No valid source folders provided. Exiting."))
+        console_print("  No valid source folders provided. Exiting.", RED)
         _exit_prompt()
         return
 
     # --- Destination input ------------------------------------------------
-    raw_dst = prompt_input("Enter destination folder path: ", default_dst).strip()
-    dest = Path(raw_dst or default_dst).expanduser()
+    raw_dst = prompt_input("Enter destination folder path: ").strip()
+    dest = Path(raw_dst).expanduser()
     if not str(dest).strip():
-        print(c(RED, "  No destination provided. Exiting."))
+        console_print("  No destination provided. Exiting.", RED)
         _exit_prompt()
         return
 
-    save_last_used([str(s) for s in sources], str(dest))
-
-    # --- Process -----------------------------------------------------------
-    print()
-    print(c(GREEN, f"  Sorting {len(sources)} source folder(s) into {dest} ..."))
-    all_files = list(scan_sources(sources))
+    # --- Scan --------------------------------------------------------------
+    all_files = list(scan_sources(sources, cfg["extensions"]))
     total = len(all_files)
-    print(c(GREEN, f"  Found {total} image/video file(s)."))
-    print()
+    if total == 0:
+        console_print(f"  No {cfg['label']} files found in the given source folder(s).", YELLOW)
+        console_print(f"  (Active extensions: {', '.join(sorted(e for e in cfg['extensions']))})", "dim")
+        _exit_prompt()
+        return
+
+    console_print(f"  Sorting {len(sources)} source folder(s) into {dest} ...", GREEN)
+    console_print(f"  Found {total} file(s).", GREEN)
+    console_print("")
+    console_print(_legend(cfg))
+    console_print("")
 
     panel = {"sources": len(sources), "scanned": total,
              "copied": 0, "duplicates": 0, "fallback": 0, "errors": 0}
+    type_counts: dict = {k: 0 for k in cfg["types"]}
+    start = time.time()
 
-    for i, file_path in enumerate(all_files, 1):
-        try:
-            dt = read_capture_date(file_path)
-            if dt is None:
-                mtime = file_path.stat().st_mtime
-                dt = datetime.datetime.fromtimestamp(mtime)
-                panel["fallback"] += 1
-                log_fallback(file_path, dt)
-                color = DIM_GREEN
-            else:
+    # Drive space: first source drive + destination drive (refreshed every 50).
+    drive_src = _drive_free(sources[0])
+    drive_dest = _drive_free(dest)
+    tick = 0
+
+    is_tty = sys.stdout.isatty()
+
+    if not is_tty:
+        # Non-interactive / piped: sequential progress lines (also great for
+        # logs and for running under automation or a redirected console).
+        for i, file_path in enumerate(all_files, 1):
+            try:
+                dt = read_capture_date(file_path, cfg["date_tags"])
                 color = GREEN
+                is_fallback = False
+                if dt is None:
+                    mtime = file_path.stat().st_mtime
+                    dt = datetime.datetime.fromtimestamp(mtime)
+                    panel["fallback"] += 1
+                    log_fallback(file_path, dt)
+                    is_fallback = True
+                    color = YELLOW
 
-            day_dir = destination_for(dest, dt)
-            status, day_rel = _copy_one(file_path, day_dir)
-            if status == "copied":
-                panel["copied"] += 1
-            elif status == "dup":
-                panel["duplicates"] += 1
-            elif status == "err":
+                day_dir = destination_for(dest, dt)
+                status, day_dir, err_msg = _copy_one(file_path, day_dir)
+                day_rel = _rel(dest, day_dir)
+                if status == "copied":
+                    panel["copied"] += 1
+                elif status == "dup":
+                    panel["duplicates"] += 1
+                elif status == "err":
+                    panel["errors"] += 1
+
+                _bump_type_counts(type_counts, file_path.suffix, cfg)
+
+                line = _current_file_line(file_path, day_rel, status, is_fallback, color, cfg)
+                t_line = Text()
+                t_line.append(f"[{i}/{total}] ", style=GREEN)
+                t_line.append_text(line)
+                if status == "err":
+                    t_line.append(f"  (ERROR {err_msg})", style=RED)
+                CONSOLE.print(t_line)
+            except Exception as exc:  # noqa: BLE001
                 panel["errors"] += 1
+                _bump_type_counts(type_counts, file_path.suffix, cfg)
+                CONSOLE.print(Text(f"[{i}/{total}] ERROR {file_path}: {exc}", style=RED))
+    else:
+        # Interactive: live split-panel dashboard.
+        left = _left_panel(cfg)
+        layout = _build_layout(cfg, left, _right_panel(
+            cfg, panel, type_counts, Text("Scanning ...", style="dim"), total, 0,
+            start, drive_src, drive_dest))
+        try:
+            with Live(layout, console=CONSOLE, refresh_per_second=10,
+                      screen=False, redirect_stdout=False, get_renderable=None) as live:
+                for i, file_path in enumerate(all_files, 1):
+                    try:
+                        dt = read_capture_date(file_path, cfg["date_tags"])
+                        is_fallback = False
+                        color = cfg["accent"]
+                        if dt is None:
+                            mtime = file_path.stat().st_mtime
+                            dt = datetime.datetime.fromtimestamp(mtime)
+                            panel["fallback"] += 1
+                            log_fallback(file_path, dt)
+                            is_fallback = True
+                            color = YELLOW
 
-            line = f"{c(GREEN, f'[{i}/{total}]')} {color}{file_path.name} -> {c(CYAN, day_rel)}"
-            if status == "err":
-                line += c(RED, "  (ERROR)")
-            elif status == "dup":
-                line += c(YELLOW, "  (dup)")
-            print(line)
-        except Exception as exc:  # noqa: BLE001 - keep going on any single-file failure
-            panel["errors"] += 1
-            print(f"{c(GREEN, f'[{i}/{total}]')} {c(RED, 'ERROR')} {file_path}: {exc}")
+                        day_dir = destination_for(dest, dt)
+                        status, day_dir, err_msg = _copy_one(file_path, day_dir)
+                        day_rel = _rel(dest, day_dir)
+                        if status == "copied":
+                            panel["copied"] += 1
+                        elif status == "dup":
+                            panel["duplicates"] += 1
+                        elif status == "err":
+                            panel["errors"] += 1
 
-    print_summary(panel)
+                        _bump_type_counts(type_counts, file_path.suffix, cfg)
+
+                        cur = _current_file_line(file_path, day_rel, status, is_fallback, color, cfg)
+                        if status == "err":
+                            cur.append(f"  (ERROR {err_msg})", style=RED)
+                        tick += 1
+                        if tick % 50 == 0:
+                            drive_src = _drive_free(sources[0])
+                            drive_dest = _drive_free(dest)
+
+                        live.update(_build_layout(
+                            cfg, left, _right_panel(
+                                cfg, panel, type_counts, cur, total, i,
+                                start, drive_src, drive_dest)))
+                    except Exception as exc:  # noqa: BLE001
+                        panel["errors"] += 1
+                        _bump_type_counts(type_counts, file_path.suffix, cfg)
+                        cur = Text(f"ERROR {file_path}: {exc}", style=RED)
+                        live.update(_build_layout(
+                            cfg, left, _right_panel(
+                                cfg, panel, type_counts, cur, total, i,
+                                start, drive_src, drive_dest)))
+        except KeyboardInterrupt:
+            CONSOLE.print(Text("\n  Cancelled by user.", style=RED))
+            _exit_prompt()
+            return
+
+    print_summary(panel, cfg, type_counts, time.time() - start)
     _exit_prompt()
 
 
-def _copy_one(file_path: Path, day_dir: Path):
-    """Copy a single file handling dedup + collision rename.
-
-    Returns (status, day_rel) where status is one of "copied"/"dup"/"err" and
-    day_rel is the destination sub-path (e.g. "2026/August/26") for display.
-    """
-    try:
-        src_identity = file_identity(file_path)
-        target = unique_copy_path(day_dir, file_path.name, src_identity)
-        if target is None:
-            return "dup", _rel(day_dir)
-        shutil.copy2(file_path, target)
-        return "copied", _rel(day_dir)
-    except OSError as exc:
-        return "err", f"{_rel(day_dir)}  ({exc})"
-
-
-def _rel(day_dir: Path) -> str:
-    """Return the display sub-path of a day folder (e.g. 2026/August/26)."""
-    return str(day_dir)
-
-
-def _exit_prompt() -> None:
-    input(c(GREEN, "\nPress Enter to exit..."))
+def _bump_type_counts(type_counts: dict, ext: str, cfg: dict) -> None:
+    """Increment the matching per-type counter for an extension."""
+    for kind, info in cfg["types"].items():
+        if ext.lower() in info["exts"]:
+            type_counts[kind] = type_counts.get(kind, 0) + 1
+            return
 
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print(c(RED, "\n  Cancelled by user."))
+        console_print("\n  Cancelled by user.", RED)
         try:
-            input(c(GREEN, "\nPress Enter to exit..."))
+            input(f"\x1b[32mPress Enter to exit...\x1b[0m")
         except EOFError:
             pass

@@ -5,7 +5,7 @@ REM ===========================================================================
 REM  build.bat - build PicSort.exe (single portable .exe) with PyInstaller
 REM
 REM  One-time setup on a machine WITH Python installed:
-REM    1. pip install pyinstaller colorama requests
+REM    1. pip install pyinstaller rich requests
 REM    2. run this script
 REM
 REM  Output: dist\PicSort.exe  (a self-contained, portable exe - no Python
@@ -32,7 +32,7 @@ if %errorlevel%==0 (
 
 if errorlevel 1 (
     echo.
-    echo  BUILD FAILED. Make sure you have run:  pip install pyinstaller
+    echo  BUILD FAILED. Make sure you have run:  pip install pyinstaller rich requests
     pause
     exit /b 1
 )
