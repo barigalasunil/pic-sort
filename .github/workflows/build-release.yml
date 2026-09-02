@@ -1,0 +1,42 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'              # e.g. v1.0.0 -> publishes a GitHub Release
+  workflow_dispatch:      # manual trigger to test the build w/o publishing
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build dependencies
+        run: |
+          pip install pyinstaller colorama requests
+
+      - name: Build PicSort.exe
+        run: |
+          pyinstaller --onefile --console --name PicSort picsort.py
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PicSort-exe
+          path: dist/PicSort.exe
+
+      # Publish a GitHub Release + attach the exe ONLY on tag pushes (v*).
+      # workflow_dispatch runs skip this step so you can test the build alone.
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/PicSort.exe
+          generate_release_notes: true

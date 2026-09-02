@@ -1,0 +1,16 @@
+# PyInstaller build output
+dist/
+build/
+*.spec
+
+# Runtime artifacts (created next to the exe / in repo)
+tools/
+last_used.json
+fallback_used.log
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
