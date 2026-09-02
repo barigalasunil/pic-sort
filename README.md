@@ -98,26 +98,6 @@ That produces `dist\PicSort.exe` — a single, portable exe. Distribute just tha
 
 ---
 
-## 🚀 Releases (automated with GitHub Actions)
-
-A GitHub Actions workflow (`.github/workflows/build-release.yml`) builds and publishes `PicSort.exe` automatically whenever you tag a commit — so users (and future-you) can grab a fresh Windows exe straight from the repo's **Releases** page, no build or Python needed.
-
-**To ship a new release:**
-
-```bat
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-That's it. GitHub Actions spins up a `windows-latest` runner, installs the build deps, runs the same PyInstaller command as `build.bat`, then creates a Release for that tag and attaches `PicSort.exe` as a downloadable asset (with auto-generated release notes). The Actions run is visible under the repo's **Actions** tab while it builds.
-
-**Notes:**
-- The build runs on **Windows** so the exe is a proper Windows binary — building on Linux/macOS would not produce a working `.exe`.
-- The **manual trigger** (`workflow_dispatch`) on the Actions tab lets you build & upload the exe as an artifact *without* publishing a Release — handy for testing.
-- Local development can keep using `build.bat` normally; the workflow is just the automated/CI path.
-
----
-
 ## 🔄 Notes on merge & dedup behavior
 
 - **Never deletes or recreates** existing `Year/Month/Day` folders — it always **merges** into them.
