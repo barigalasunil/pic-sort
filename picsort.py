@@ -25,7 +25,6 @@ Early tool-cancel:  Ctrl+C at any prompt or during processing.
 
 import datetime
 import hashlib
-import io
 import os
 import re
 import shutil
@@ -686,13 +685,6 @@ def _center_block(text: str) -> str:
     )
 
 
-def _render_text(renderable) -> str:
-    buf = io.StringIO()
-    tmp = Console(width=CONSOLE.width, force_terminal=False, record=True, file=buf)
-    tmp.print(renderable, end="")
-    return tmp.export_text()
-
-
 def select_mode() -> str:
     """Ask the user which mode to run and return its MODE_CONFIGS key."""
     keys = list(MODE_CONFIGS)
@@ -714,10 +706,8 @@ def select_mode() -> str:
         padding=(1, 2),
         width=max(0, min(70, CONSOLE.width - 4)),
     )
-    rendered = _render_text(panel)
-    if CONSOLE.width > 78:
-        rendered = _center_block(rendered)
-    CONSOLE.print(Text("\n" + rendered))
+    CONSOLE.print(Text("\n"))
+    CONSOLE.print(panel)
     while True:
         choice = input(f"  Mode [1-{len(keys)}]: ").strip()
         if choice.isdigit() and 1 <= int(choice) <= len(keys):
