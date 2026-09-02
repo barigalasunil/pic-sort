@@ -25,6 +25,7 @@ Early tool-cancel:  Ctrl+C at any prompt or during processing.
 
 import datetime
 import hashlib
+import io
 import os
 import re
 import shutil
@@ -132,6 +133,8 @@ FOLDER_ICON = r"""
  |  |________________| |
   \__________________/
 """
+
+TAGLINE = "Sort your photos, videos & documents by date, automatically."
 
 # ---------------------------------------------------------------------------
 # Mode configuration.  Add a mode here (or a combined one) without touching
@@ -668,13 +671,53 @@ def prompt_input(prompt: str, default: str = "") -> str:
     return input(prompt).strip()
 
 
+_MODE_SUBTITLES = {
+    "media": "Sort photos & videos by capture date",
+    "documents": "Sort PDF, Word, Excel & PowerPoint by creation date",
+}
+
+
+def _center_block(text: str) -> str:
+    """Horizontally center each line of a multi-line string for the console."""
+    width = CONSOLE.width
+    lines = text.rstrip("\n").split("\n")
+    return "\n".join(
+        "".ljust(max(0, (width - len(l)) // 2)) + l for l in lines
+    )
+
+
+def _render_text(renderable) -> str:
+    buf = io.StringIO()
+    tmp = Console(width=CONSOLE.width, force_terminal=False, record=True, file=buf)
+    tmp.print(renderable, end="")
+    return tmp.export_text()
+
+
 def select_mode() -> str:
     """Ask the user which mode to run and return its MODE_CONFIGS key."""
-    keys = list(MODE_CONFIGS)  # insertion order -> Media [1], Documents [2]
-    prompt_lines = ["", "  Select mode:"]
+    keys = list(MODE_CONFIGS)
+    box_body = Text()
+    box_body.append("Select mode:  ", style=f"bold {GREEN}")
+    box_body.append("\n")
     for i, k in enumerate(keys, 1):
-        prompt_lines.append(f"    [{i}] {MODE_CONFIGS[k]['label']}")
-    CONSOLE.print(Text("\n".join(prompt_lines), style=GREEN))
+        box_body.append(f"[{i}] {MODE_CONFIGS[k]['label']}\n")
+        sub_text = _MODE_SUBTITLES.get(k, "")
+        if sub_text:
+            box_body.append(f"     {sub_text}\n")
+        box_body.append("\n")
+    panel = Panel(
+        box_body,
+        title=f"[{GREEN}] PIC-SORT MODE",
+        title_align="left",
+        border_style=GREEN,
+        box=box.ASCII,
+        padding=(1, 2),
+        width=max(0, min(70, CONSOLE.width - 4)),
+    )
+    rendered = _render_text(panel)
+    if CONSOLE.width > 78:
+        rendered = _center_block(rendered)
+    CONSOLE.print(Text("\n" + rendered))
     while True:
         choice = input(f"  Mode [1-{len(keys)}]: ").strip()
         if choice.isdigit() and 1 <= int(choice) <= len(keys):
@@ -684,10 +727,12 @@ def select_mode() -> str:
 
 def print_logo() -> None:
     CONSOLE.print()
-    CONSOLE.print(Text(LOGO_ART, style=GREEN))
-    CONSOLE.print(Text("  sort your entire photo, video & document library by date, automatically",
-                       style=f"bold {GREEN}"))
-    CONSOLE.print(Text("  " + "=" * 62, style="dim"))
+    CONSOLE.print(Text(_center_block(LOGO_ART), style=GREEN))
+    sub = Text()
+    padding = " " * max(0, (CONSOLE.width - len(TAGLINE)) // 2)
+    sub.append(padding + TAGLINE, style=f"bold {GREEN}")
+    CONSOLE.print(sub)
+    CONSOLE.print(Text(" " * max(0, (CONSOLE.width - 62) // 2) + "=" * 62, style="dim"))
     CONSOLE.print()
 
 
