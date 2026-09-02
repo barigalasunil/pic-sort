@@ -525,6 +525,20 @@ def _type_lookup(ext: str):
     return None
 
 
+_ACTIVITY_MAX = 8
+
+
+def _activity_list(activity_lines: list, accent: str) -> Group:
+    """Fixed-height, non-scrolling recent-activity list.
+
+    Completed lines appear newest-at-bottom; the final in-progress line is
+    always the 'currently processing' file. The list is truncated to at most
+    _ACTIVITY_MAX lines so it never overflows the panel.
+    """
+    lines = activity_lines[-_ACTIVITY_MAX:] if len(activity_lines) > _ACTIVITY_MAX else activity_lines
+    return Group(*lines) if lines else Group(Text("Scanning ...", style="dim"))
+
+
 def _current_file_line(file_path: Path, day_rel: str, status: str,
                        is_fallback: bool, color: str, mode_cfg) -> Text:
     """Build the colored single-file progress line shown in the live panel."""
@@ -601,18 +615,16 @@ def _progress_renderable(processed: int, total: int, style: str) -> Progress:
     return progress
 
 
-def _right_panel(cfg, counts, type_counts, current_line, total, processed,
+def _right_panel(cfg, counts, type_counts, activity_lines, total, processed,
                  start, drive_src, drive_dest) -> Panel:
     elapsed = time.time() - start
-
     body = Group(
-        _progress_renderable(processed, total, cfg["accent"]),
-        Text(),  # spacer
-        current_line if current_line is not None else Text("Scanning ...", style="dim"),
-        Text(),
         _stats_table(cfg, counts, total, processed, elapsed, drive_src, drive_dest),
         Text("Per type:", style="bold"),
         _per_type_table(type_counts, cfg),
+        Text(),
+        _activity_list(activity_lines, cfg["accent"]),
+        _progress_renderable(processed, total, cfg["accent"]),
     )
     return Panel(
         body,
@@ -623,11 +635,10 @@ def _right_panel(cfg, counts, type_counts, current_line, total, processed,
     )
 
 
-def _left_panel(cfg) -> Panel:
-    """Narrow left panel: the mode icon rendered in the accent color."""
-    t = Text(cfg["icon"], style=cfg["accent"])
+def _left_panel(cfg, body: Text) -> Panel:
+    """Narrow left panel: mode icon + legend (or summary after the run ends)."""
     return Panel(
-        t,
+        body,
         title=f"[{cfg['accent']}] {cfg['label'].split('(')[0].strip()}",
         border_style=cfg["accent"],
         box=box.ASCII,
@@ -656,6 +667,18 @@ def _legend(mode_cfg) -> Text:
     t.append("   ")
     t.append("# fallback", style=YELLOW)
     t.append("   ")
+    t.append("# error", style=RED)
+    return t
+
+
+def _legend_text(cfg) -> Text:
+    """Build the color legend as multi-line Text (used in the left panel)."""
+    t = Text()
+    for kind, info in cfg["types"].items():
+        t.append(f"# {info['label']}", style=info["color"])
+        t.append("\n")
+    t.append("# fallback", style=YELLOW)
+    t.append("\n")
     t.append("# error", style=RED)
     return t
 
@@ -903,9 +926,14 @@ def main() -> None:
                 CONSOLE.print(Text(f"[{i}/{total}] ERROR {file_path}: {exc}", style=RED))
     else:
         # Interactive: live split-panel dashboard.
-        left = _left_panel(cfg)
+        activity_lines = []
+        left_body = Text()
+        left_body.append(cfg["icon"], style=cfg["accent"])
+        left_body.append("\n\n")
+        left_body.append_text(_legend_text(cfg))
+        left = _left_panel(cfg, left_body)
         layout = _build_layout(cfg, left, _right_panel(
-            cfg, panel, type_counts, Text("Scanning ...", style="dim"), total, 0,
+            cfg, panel, type_counts, activity_lines, total, 0,
             start, drive_src, drive_dest))
         try:
             with Live(layout, console=CONSOLE, refresh_per_second=10,
@@ -938,6 +966,10 @@ def main() -> None:
                         cur = _current_file_line(file_path, day_rel, status, is_fallback, color, cfg)
                         if status == "err":
                             cur.append(f"  (ERROR {err_msg})", style=RED)
+                        prog = Text("-> ", style=cfg["accent"])
+                        prog.append_text(cur)
+                        prog.append("\n")
+                        activity_lines.append(prog)
                         tick += 1
                         if tick % 50 == 0:
                             drive_src = _drive_free(sources[0])
@@ -945,20 +977,30 @@ def main() -> None:
 
                         live.update(_build_layout(
                             cfg, left, _right_panel(
-                                cfg, panel, type_counts, cur, total, i,
+                                cfg, panel, type_counts, activity_lines, total, i,
                                 start, drive_src, drive_dest)))
                     except Exception as exc:  # noqa: BLE001
                         panel["errors"] += 1
                         _bump_type_counts(type_counts, file_path.suffix, cfg)
                         cur = Text(f"ERROR {file_path}: {exc}", style=RED)
+                        activity_lines.append(cur)
                         live.update(_build_layout(
                             cfg, left, _right_panel(
-                                cfg, panel, type_counts, cur, total, i,
+                                cfg, panel, type_counts, activity_lines, total, i,
                                 start, drive_src, drive_dest)))
         except KeyboardInterrupt:
             CONSOLE.print(Text("\n  Cancelled by user.", style=RED))
             _exit_prompt()
             return
+
+    if is_tty:
+        left2 = _left_panel(cfg, _summary_panel(cfg, panel, type_counts, time.time() - start))
+        final_layout = _build_layout(cfg, left2, _right_panel(
+            cfg, panel, type_counts, activity_lines, total, len(all_files),
+            start, drive_src, drive_dest))
+        CONSOLE.print()
+        CONSOLE.print(final_layout)
+        CONSOLE.print()
 
     print_summary(panel, cfg, type_counts, time.time() - start)
     _exit_prompt()
