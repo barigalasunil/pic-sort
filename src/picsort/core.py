@@ -63,6 +63,8 @@ THEME = {
     "fallback": "#D19A66",
     "error":    "#E06C75",
     "dim":      "#5C6370",
+    # Defined for completeness/back-compat; intentionally not applied
+    # (the app uses the terminal's own background).
     "panel_bg": "#282828",
     "teal":     "#56B6C2",
     "purple":   "#C678DD",

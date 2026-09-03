@@ -2,6 +2,7 @@
 """PicSort - Rich console primitives and renderables (no data logic)."""
 
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -181,8 +182,13 @@ def _left_panel(cfg, body: Text) -> Panel:
 def _title_bar() -> Panel:
     """macOS-style window title bar: traffic-light dots + centered app name."""
     t = Text()
+    _dot = "●"
+    try:
+        _dot.encode(sys.stdout.encoding or "utf-8")
+    except (UnicodeEncodeError, LookupError):
+        _dot = "o"
     for dot in ("#FF5F56", "#FFBD2E", "#27C93F"):
-        t.append(" ●", style=dot)
+        t.append(f" {_dot}", style=dot)
     t.append("   ")
     t.append("picsort", style=core.THEME["header"])
     return Panel(t, box=box.ROUNDED, padding=(0, 1), expand=True,
@@ -249,7 +255,7 @@ def _summary_panel(cfg, panel: dict, type_counts: dict, elapsed) -> Panel:
         color = RED if label.startswith("Errors") else (GREEN if label == "Mode" else DIM)
         table.add_row(
             Text(label, style="bold" if label == "Mode" else None),
-            Text(str(value), style=color) if color else Text(str(value)),
+            Text(str(value), style=color),
         )
 
     return Panel(table, title=f"[{GREEN}] Summary - {cfg['label']}",
