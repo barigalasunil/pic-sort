@@ -6,9 +6,9 @@
 
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078d6)]()
+[![PyPI](https://img.shields.io/pypi/v/picsort-cli)](https://pypi.org/project/picsort-cli/)
 
-*One portable .exe that sorts **photos, videos and documents** from any folders into a clean `YYYY/Month/DD` structure — safe to re-run, dedupe-aware, and needs no Python installed on the machine that runs it. Pick a **Media** or **Documents** mode at startup.*
+*A global CLI tool that sorts **photos, videos and documents** from any folders into a clean `YYYY/Month/DD` structure — safe to re-run, dedupe-aware. Pick a **Media** or **Documents** mode at startup.*
 
 </div>
 
@@ -16,15 +16,15 @@
 
 ## ✨ Features
 
-- 🖥️ **Two modes at startup** — choose **Media** (photos & videos) or **Documents** (PDF, Word, Excel, PowerPoint). Each mode is a config-driven `MODE_CONFIGS` entry, so a combined/multi-mode can be added later without rewriting the core scan/copy logic.
-- 📅 **Metadata-based sorting** — **Media** reads the real capture date from EXIF / MOV metadata (`DateTimeOriginal`, `CreateDate`, `MediaCreateDate`, `TrackCreateDate`, `CreationDate`); **Documents** reads the **creation** date (`CreateDate` / `CreateTime` / `CreationDate` / `DateCreated`) per format. Both fall back to the file's modified date only when no metadata exists.
+- 🖥️ **Two modes at startup** — choose **Media** (photos & videos) or **Documents** (PDF, Word, Excel, PowerPoint).
+- 📅 **Metadata-based sorting** — **Media** reads the real capture date from EXIF / MOV metadata; **Documents** reads the **creation** date per format. Both fall back to the file's modified date only when no metadata exists.
 - 🔁 **Safe to re-run** — **copy** only, never move or rename originals. Repeated runs merge into existing folders with no data loss.
-- 🧬 **Hash deduplication** — every file is hashed and compared against what's already in the destination day-folder; content-identical files are skipped (no duplicate copies). Large files (>100 MB) use a fast size + partial-hash fingerprint.
-- 📦 **Single portable exe** — one file you can drop on any Windows PC. No Python, no pip, no installers.
-- 🖥️ **Zero Python install needed to run** — the `.exe` bundles everything.
-- ⚡ **Auto-fetches ExifTool on first run** — downloads ExifTool into a `tools/` folder next to the exe automatically, then skips setup on later runs.
-- 🎨 **Live split-panel terminal UI** (built on `rich`) — a left panel shows the mode icon (camera / folder) while a right panel drives a live progress bar, per-file-type running totals, elapsed time, source/destination drive free space, and copied/dup/fallback/error counters, with a per-type color legend.
-- 📊 **Boxed summary panel** at the end with per-mode totals (e.g. `Photos: 120  Videos: 8` or `PDF: 4  Word: 2  Excel: 1  PowerPoint: 1`).
+- 🧬 **Hash deduplication** — every file is hashed against what's already in the destination day-folder; content-identical files are skipped. Large files (>100 MB) use a fast size + partial-hash fingerprint.
+- 🔮 **Global CLI** — install once with `pipx`, then run `picsort` from any folder, any terminal.
+- ⚡ **Auto-fetches ExifTool on first run** — downloads ExifTool into your per-user app-data folder automatically, then skips setup on later runs.
+- 🚀 **Auto-update notice** — checks PyPI silently and shows a one-line "update available" hint when a newer release exists.
+- 🎨 **Live split-panel terminal UI** (built on `rich`) — a left panel shows the mode icon (camera / folder) while a right panel drives a live progress bar, per-file-type running totals, elapsed time, drive free space, and copied/dup/fallback/error counters, with a per-type color legend.
+- 📊 **Boxed summary panel** at the end with per-mode totals (e.g. `Photos: 120  Videos: 8`).
 
 ---
 
@@ -44,60 +44,50 @@ Every file in your source folder(s) is read for its date (capture date for **Med
 
 The structure is **always** `YYYY / MonthName / DD` — regardless of which source folder a file came from. Multiple source folders feed the same flat, date-based tree.
 
-**Project layout (source, before building):**
-
-```
-pic-sort/
-├── picsort.py        # the full tool (single file)
-├── build.bat         # one-time: produces PicSort.exe via PyInstaller
-├── .gitignore
-└── README.md
-```
-
-**Runtable layout (what end users actually get):**
-
-```
-PicSort/               ← any folder you drop the exe into
-├── PicSort.exe
-└── tools/             ← created automatically on first run
-    └── exiftool.exe   ← auto-downloaded here
-```
-
 ---
 
-## 🚀 Quick Start — For Users
+## 🚀 Quick Start — Install & Run
 
-You don't need Python. You just need the exe.
+### Prerequisites (only once)
 
-1. Put `PicSort.exe` in any folder on your Windows PC.
-2. Double-click it — a terminal window opens with the PicSort banner.
-3. Choose a mode: **`[1] Media`** (photos & videos) or **`[2] Documents`** (PDF, Word, Excel, PowerPoint).
-4. First run downloads ExifTool automatically (needs internet once; a `tools/` folder appears next to the exe).
-5. Enter your **source folder(s)** (comma-separated for multiple) and a **destination folder**.
-6. Watch it copy everything into `Destination/YYYY/MonthName/DD` (the live panel shows progress, per-type totals, drive space and elapsed time).
-7. Re-run anytime — it's safe (each run prompts fresh for source & destination).
+Install `pipx` if you don't have it:
 
-> 💡 First run may trigger a **Windows SmartScreen** warning (it's an unsigned exe). Click **More info → Run anyway**. See [Troubleshooting](#🛠-troubleshooting) below.
-
----
-
-## 🔧 Building from Source
-
-Only for developers who want to build the exe themselves. You need a machine **with Python installed**.
-
-```bat
-:: 1. Clone this repo
-git clone https://github.com/you/pic-sort.git
-cd pic-sort
-
-:: 2. Install build dependencies
-pip install pyinstaller rich requests
-
-:: 3. Build the exe
-build.bat
+```
+python -m pip install --user pipx
+python -m pipx ensurepath
 ```
 
-That produces `dist\PicSort.exe` — a single, portable exe. Distribute just that file.
+Close and reopen your terminal afterward (or `pipx ensurepath` adds the needed PATH entry for the next session).
+
+### Install
+
+```
+pipx install picsort-cli
+```
+
+### Run
+
+```
+picsort
+```
+
+Run `picsort` from any folder, any terminal:
+1. Choose a mode: **`[1] Media`** (photos & videos) or **`[2] Documents`** (PDF, Word, Excel, PowerPoint).
+2. First run downloads ExifTool automatically (needs internet once; stored in your per-user app-data folder).
+3. Enter your **source folder(s)** (comma-separated for multiple) and a **destination folder**.
+4. Watch it copy everything into `Destination/YYYY/MonthName/DD`.
+
+### Upgrade
+
+```
+pipx upgrade picsort-cli
+```
+
+### Uninstall
+
+```
+pipx uninstall picsort-cli
+```
 
 ---
 
@@ -107,62 +97,51 @@ That produces `dist\PicSort.exe` — a single, portable exe. Distribute just tha
 - **Repeated runs are safe**: run the same sources against the same destination a hundred times; files already copied are skipped via hashing, so nothing is duplicated.
 - **Multiple source folders** can feed the same destination over time. Files with identical content are skipped; different files that happen to share a filename get a `_1`, `_2`, … suffix **before the extension only** (e.g. `IMG_2024.jpg`, `IMG_2024_1.jpg`).
 - **Never renames or moves** the original source files. PicSort only ever **copies** (`copy2`, preserving timestamps).
-- **Metadata-first**: dates come from ExifTool metadata; only files with no readable metadata fall back to the file's modified date. Any fallback use is logged to `fallback_used.log` next to the exe.
+- **Metadata-first**: dates come from ExifTool metadata; only files with no readable metadata fall back to the file's modified date. Any fallback use is logged to `fallback_used.log` in your per-user app-data folder.
+
+---
+
+## 🚀 Releasing a New Version (maintainers)
+
+1. Bump `__version__` in `src/picsort/__init__.py` (e.g. `0.1.0` → `0.2.0`).
+2. Commit the change.
+3. Tag and push:
+
+```
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+GitHub Actions builds the package and publishes to PyPI **automatically** via Trusted Publishing (OIDC) — no tokens required. The package name on PyPI is `picsort-cli`; the installed command stays `picsort`.
 
 ---
 
 ## 🛠 Troubleshooting
 
-### 🔒 Windows SmartScreen / Defender warning on first run
-`PicSort.exe` is **unsigned**, so Windows shows a blue "Windows protected your PC" screen the first time.
+### `picsort: command not found` after install
+Close and reopen your terminal, or re-run:
 
-**Fix:** click **More info** (blue link) → **Run anyway**. This is a normal warning for any independently-built exe; scan it with VirusTotal if you're cautious, then continue.
+```
+python -m pipx ensurepath
+```
 
-### 🌐 Internet required on first run
-The first run downloads ExifTool automatically and places it in `tools\` next to `PicSort.exe`. To find the **current** version (versions rotate, old links stop working), PicSort scrapes the exiftool.org homepage for the latest Windows 64-bit download link instead of hardcoding a version. If you're offline or the site is unreachable, PicSort prints manual instructions:
+and restart the terminal.
 
+### Internet required on first run
+The first run downloads ExifTool automatically into your per-user app-data folder. To find the **current** version (versions rotate, old links stop working), PicSort scrapes exiftool.org for the latest Windows 64-bit download link instead of hardcoding a version. If you're offline or the site is unreachable, PicSort prints manual instructions:
 1. Download the **Windows Executable** zip (64-bit) from https://exiftool.org
-2. Extract the whole ZIP — **keep the `exiftool_files` folder**; the small `exiftool(-k).exe` is a launcher that needs it alongside
-3. Copy the exe **and** the `exiftool_files` folder into `tools\` next to `PicSort.exe`, renaming `exiftool(-k).exe` → `exiftool.exe`:
-   ```
-   tools\
-   ├── exiftool.exe
-   └── exiftool_files\     ← must sit right beside exiftool.exe
-   ```
-4. Re-run PicSort.
+2. Extract the whole ZIP — **keep the `exiftool_files` folder** alongside it
+3. Copy the exe **and** the `exiftool_files` folder into `<user-app-data>\picsort\tools\`, renaming `exiftool(-k).exe` → `exiftool.exe`
+4. Re-run `picsort`.
 
 ### ❓ Files sorted by the wrong date
 Some files (esp. screen recordings, edited exports, or files stripped of metadata) have no readable capture date. PicSort falls back to the file's **modified date** and logs it in `fallback_used.log`. If that's wrong, correct the file's modified timestamp and re-run — already-copied files are skipped, so use a fresh destination folder to re-sort.
-
-### 🛑 Exe won't start at all
-Make sure you copied the whole exe (it's a single file — nothing else is needed). Re-download if the file looks truncated.
-
----
-
-## ⚠️ If Windows Blocks the EXE
-
-If Windows **SmartScreen** still prevents `PicSort.exe` from running even after clicking **"More info → Run anyway"**, or if the exe is blocked entirely by system policy / antivirus, you can run PicSort directly from source instead — no exe needed:
-
-1. **Get the code** — click the green **Code** button → **Download ZIP** (or run `git clone <repo-url>`), then extract it.
-2. **Install Python 3.11+** from [python.org](https://www.python.org/) — during install, tick **"Add python.exe to PATH"**.
-3. **Open a terminal** in the project folder.
-4. **Install dependencies:**
-   ```bat
-   pip install rich colorama requests
-   ```
-5. **Run:**
-   ```bat
-   py picsort.py
-   ```
-   (or `python picsort.py` if `py` isn't recognized)
-
-This method works **identically** to the exe — same first-run ExifTool auto-download, same interactive prompts, same live output. It just runs through Python directly instead of the packaged binary. If the repo doesn't include a `tools\` folder, it'll be created automatically on first run.
 
 ---
 
 ## 📸 Screenshot / Demo
 
-*(Add a screenshot or animated GIF of the Matrix-style terminal output here.)*
+*(Add a screenshot or animated GIF of the terminal output here.)*
 
 ---
 
