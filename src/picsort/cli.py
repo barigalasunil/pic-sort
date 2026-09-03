@@ -19,7 +19,7 @@ from picsort import update_check
 GREEN = core.GREEN
 YELLOW = core.YELLOW
 RED = core.RED
-CYAN = core.CYAN
+
 DIM = core.DIM
 
 CONSOLE = ui.CONSOLE

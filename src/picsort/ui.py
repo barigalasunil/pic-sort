@@ -18,7 +18,7 @@ from picsort import core
 GREEN = core.GREEN
 YELLOW = core.YELLOW
 RED = core.RED
-CYAN = core.CYAN
+
 DIM = core.DIM
 
 CONSOLE = Console()
@@ -124,7 +124,7 @@ def _stats_table(cfg, counts: dict, total_files: int, processed: int,
     grid.add_row(Text("Duplicates", style=YELLOW), Text(str(counts["duplicates"]), style=YELLOW))
     grid.add_row(Text("Fallback date", style="yellow"), Text(str(counts["fallback"]), style="yellow"))
     grid.add_row(Text("Errors", style=RED), Text(str(counts["errors"]), style=RED))
-    grid.add_row(Text("Elapsed", style=CYAN), Text(_fmt_elapsed(elapsed), style=CYAN))
+    grid.add_row(Text("Elapsed", style="dim"), Text(_fmt_elapsed(elapsed), style="dim"))
 
     if drive_src:
         free_src = _human_bytes(drive_src[0])

@@ -56,11 +56,23 @@ DOCS_DATE_TAGS = [
     "DateCreated",
 ]
 
-GREEN = "bright_green"
-YELLOW = "yellow"
-RED = "bright_red"
-CYAN = "bright_cyan"
-DIM = "bright_black"
+THEME = {
+    "header":   "#61AFEF",
+    "success":  "#98C379",
+    "warning":  "#E5C07B",
+    "fallback": "#D19A66",
+    "error":    "#E06C75",
+    "dim":      "#5C6370",
+    "panel_bg": "#282828",
+    "teal":     "#56B6C2",
+    "purple":   "#C678DD",
+}
+
+GREEN = THEME["success"]
+YELLOW = THEME["warning"]
+RED = THEME["error"]
+DIM = THEME["dim"]
+FALLBACK = THEME["fallback"]
 
 LOGO_ART = r"""
   ____ ___ ____     ____   ___  ____ _____
@@ -100,11 +112,11 @@ MODE_CONFIGS = {
         "extensions": IMAGE_EXTS | VIDEO_EXTS,
         "date_tags": MEDIA_DATE_TAGS,
         "icon": CAMERA_ICON,
-        "accent": "bright_green",
-        "dim": "bright_black",
+        "accent": THEME["teal"],
+        "dim": THEME["dim"],
         "types": {
-            "photo": {"exts": IMAGE_EXTS,  "color": "bright_green", "label": "Photos"},
-            "video": {"exts": VIDEO_EXTS,  "color": "bright_blue",  "label": "Videos"},
+            "photo": {"exts": IMAGE_EXTS,  "color": THEME["success"], "label": "Photos"},
+            "video": {"exts": VIDEO_EXTS,  "color": THEME["header"],  "label": "Videos"},
         },
     },
     "documents": {
@@ -112,13 +124,13 @@ MODE_CONFIGS = {
         "extensions": DOCUMENT_EXTS,
         "date_tags": DOCS_DATE_TAGS,
         "icon": FOLDER_ICON,
-        "accent": "bright_cyan",
-        "dim": "bright_black",
+        "accent": THEME["purple"],
+        "dim": THEME["dim"],
         "types": {
-            "pdf":     {"exts": {".pdf"},               "color": "orange1",    "label": "PDF"},
-            "word":    {"exts": {".doc", ".docx"},      "color": "bright_blue", "label": "Word"},
-            "excel":   {"exts": {".xls", ".xlsx"},      "color": "bright_green","label": "Excel"},
-            "ppt":     {"exts": {".ppt", ".pptx"},      "color": "bright_magenta","label": "PowerPoint"},
+            "pdf":     {"exts": {".pdf"},             "color": THEME["error"],   "label": "PDF"},
+            "word":    {"exts": {".doc", ".docx"},    "color": THEME["header"],  "label": "Word"},
+            "excel":   {"exts": {".xls", ".xlsx"},    "color": THEME["success"], "label": "Excel"},
+            "ppt":     {"exts": {".ppt", ".pptx"},    "color": THEME["purple"],  "label": "PowerPoint"},
         },
     },
 }
