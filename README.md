@@ -143,6 +143,12 @@ Some files (esp. screen recordings, edited exports, or files stripped of metadat
 
 *(Add a screenshot or animated GIF of the terminal output here.)*
 
+**A note on the font:** the Python app cannot control the terminal's font — that's
+set by your terminal emulator (Windows Terminal, macOS Terminal, iTerm2, etc.), not
+by the app or its ANSI codes. For the full "Mac Terminal" aesthetic, set your
+terminal's monospace font yourself — e.g. **JetBrains Mono** or **Fira Code**
+(SF Mono/Menlo on macOS). Optional and purely cosmetic.
+
 ---
 
 ## 📄 License
