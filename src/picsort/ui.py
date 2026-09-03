@@ -18,8 +18,8 @@ from picsort import core
 GREEN = core.GREEN
 YELLOW = core.YELLOW
 RED = core.RED
-
 DIM = core.DIM
+FALLBACK = core.FALLBACK
 
 CONSOLE = Console()
 
@@ -88,8 +88,8 @@ def _current_file_line(file_path: Path, day_rel: str, status: str,
     name = file_path.name
     base = Text()
     if is_fallback:
-        base.append(name, style=f"{YELLOW}")
-        base.append(f"  (fallback date)", style=YELLOW)
+        base.append(name, style=f"{FALLBACK}")
+        base.append(f"  (fallback date)", style=FALLBACK)
     else:
         base.append(name, style=color)
     base.append(f"  ->  {day_rel}", style="dim")
@@ -122,9 +122,9 @@ def _stats_table(cfg, counts: dict, total_files: int, processed: int,
     )
     grid.add_row(Text("Copied", style=GREEN), Text(str(counts["copied"]), style=GREEN))
     grid.add_row(Text("Duplicates", style=YELLOW), Text(str(counts["duplicates"]), style=YELLOW))
-    grid.add_row(Text("Fallback date", style="yellow"), Text(str(counts["fallback"]), style="yellow"))
+    grid.add_row(Text("Fallback date", style=FALLBACK), Text(str(counts["fallback"]), style=FALLBACK))
     grid.add_row(Text("Errors", style=RED), Text(str(counts["errors"]), style=RED))
-    grid.add_row(Text("Elapsed", style="dim"), Text(_fmt_elapsed(elapsed), style="dim"))
+    grid.add_row(Text("Elapsed", style=DIM), Text(_fmt_elapsed(elapsed), style=DIM))
 
     if drive_src:
         free_src = _human_bytes(drive_src[0])
@@ -163,7 +163,7 @@ def _right_panel(cfg, counts, type_counts, activity_lines, total, processed,
         body,
         title=f"[{cfg['accent']}] Session - {cfg['label']}",
         border_style=cfg["accent"],
-        box=box.ASCII,
+        box=box.ROUNDED,
         expand=True,
     )
 
@@ -173,7 +173,7 @@ def _left_panel(cfg, body: Text) -> Panel:
         body,
         title=f"[{cfg['accent']}] {cfg['label'].split('(')[0].strip()}",
         border_style=cfg["accent"],
-        box=box.ASCII,
+        box=box.ROUNDED,
         expand=True,
     )
 
@@ -196,7 +196,7 @@ def _legend(mode_cfg) -> Text:
         first = False
         t.append(f"# {info['label']}", style=info["color"])
     t.append("   ")
-    t.append("# fallback", style=YELLOW)
+    t.append("# fallback", style=FALLBACK)
     t.append("   ")
     t.append("# error", style=RED)
     return t
@@ -207,7 +207,7 @@ def _legend_text(cfg) -> Text:
     for kind, info in cfg["types"].items():
         t.append(f"# {info['label']}", style=info["color"])
         t.append("\n")
-    t.append("# fallback", style=YELLOW)
+    t.append("# fallback", style=FALLBACK)
     t.append("\n")
     t.append("# error", style=RED)
     return t
@@ -229,14 +229,14 @@ def _summary_panel(cfg, panel: dict, type_counts: dict, elapsed) -> Panel:
         ("Elapsed", _fmt_elapsed(elapsed)),
     ]
     for label, value in rows:
-        color = RED if label.startswith("Errors") else (GREEN if label == "Mode" else None)
+        color = RED if label.startswith("Errors") else (GREEN if label == "Mode" else DIM)
         table.add_row(
             Text(label, style="bold" if label == "Mode" else None),
             Text(str(value), style=color) if color else Text(str(value)),
         )
 
     return Panel(table, title=f"[{GREEN}] Summary - {cfg['label']}",
-                 border_style=GREEN, box=box.ASCII, expand=True)
+                 border_style=GREEN, box=box.ROUNDED, expand=True)
 
 
 def print_summary(panel, cfg, type_counts, elapsed) -> None:
