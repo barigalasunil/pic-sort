@@ -250,10 +250,10 @@ def select_mode() -> str:
         box_body.append("\n")
     panel = Panel(
         box_body,
-        title=f"[{GREEN}] PIC-SORT MODE",
+        title=f"[{core.THEME['header']}] PIC-SORT MODE",
         title_align="left",
-        border_style=GREEN,
-        box=box.ASCII,
+        border_style=core.THEME["header"],
+        box=box.ROUNDED,
         padding=(1, 2),
         width=max(0, min(70, CONSOLE.width - 4)),
     )
@@ -294,10 +294,10 @@ def _copy_one(file_path: Path, day_dir: Path):
 
 def print_logo() -> None:
     CONSOLE.print()
-    CONSOLE.print(Text(ui._center_block(core.LOGO_ART), style=GREEN))
+    CONSOLE.print(Text(ui._center_block(core.LOGO_ART), style=core.THEME["header"]))
     sub = Text()
     padding = " " * max(0, (CONSOLE.width - len(core.TAGLINE)) // 2)
-    sub.append(padding + core.TAGLINE, style=f"bold {GREEN}")
+    sub.append(padding + core.TAGLINE, style=f"bold {core.THEME['header']}")
     CONSOLE.print(sub)
-    CONSOLE.print(Text(" " * max(0, (CONSOLE.width - 62) // 2) + "=" * 62, style="dim"))
+    CONSOLE.print(Text(" " * max(0, (CONSOLE.width - 62) // 2) + "=" * 62, style=DIM))
     CONSOLE.print()
