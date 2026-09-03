@@ -178,11 +178,28 @@ def _left_panel(cfg, body: Text) -> Panel:
     )
 
 
+def _title_bar() -> Panel:
+    """macOS-style window title bar: traffic-light dots + centered app name."""
+    t = Text()
+    for dot in ("#FF5F56", "#FFBD2E", "#27C93F"):
+        t.append(" ●", style=dot)
+    t.append("   ")
+    t.append("picsort", style=core.THEME["header"])
+    return Panel(t, box=box.ROUNDED, padding=(0, 1), expand=True,
+                 border_style=core.THEME["header"])
+
+
 def _build_layout(cfg, left: Panel, right: Panel) -> Layout:
     layout = Layout(name="root")
-    layout.split_row(
-        Layout(left, name="left", ratio=2),
-        Layout(right, name="right", ratio=3),
+    layout.split(
+        Layout(_title_bar(), name="title", size=3),
+        Layout(
+            Layout.split_row(
+                Layout(left, name="left", ratio=2),
+                Layout(right, name="right", ratio=3),
+            ),
+            name="body",
+        ),
     )
     return layout
 
