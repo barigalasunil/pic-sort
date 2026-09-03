@@ -15,3 +15,6 @@ build/
 
 # Runtime artifacts (per-user app data is outside the repo, but keep these safe)
 *.log
+
+# Local worktrees
+.worktrees/
