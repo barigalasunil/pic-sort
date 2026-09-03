@@ -1,15 +1,17 @@
-# PyInstaller build output
-dist/
-build/
-*.spec
-
-# Runtime artifacts (created next to the exe / in repo)
-tools/
-fallback_used.log
-*.log
-
 # Python
 __pycache__/
 *.py[cod]
 .venv/
 venv/
+
+# Packaging / build output
+dist/
+build/
+*.egg-info/
+
+# Editor
+.idea/
+.vscode/
+
+# Runtime artifacts (per-user app data is outside the repo, but keep these safe)
+*.log

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "picsort-cli"
+description = "Sort your entire photo, video & document library by date, automatically."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dynamic = ["version"]
+dependencies = [
+    "rich",
+    "requests",
+]
+
+[project.scripts]
+picsort = "picsort.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "picsort.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
