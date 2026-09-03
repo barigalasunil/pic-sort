@@ -53,7 +53,7 @@ the point of the multi-color redesign.
 | `dim` | `#5C6370` | Secondary text (elapsed, drive free space) |
 | `panel_bg` | `#282828` | Subtle panel-fill accent (warm dark gray) |
 | `teal` | `#56B6C2` | Media/camera icon accent |
-| `purple` | `#C678DD` | PowerPoint type color |
+| `purple` | `#C678DD` | PowerPoint type color, Documents/folder icon accent |
 
 ### 1.2 Per-type colors (from the cohesive palette)
 
@@ -74,7 +74,8 @@ Replaces the old ad hoc `bright_green` / `orange1` / etc. values in
 Per-mode accent, both pulled from the same theme:
 
 - **Media** → `#56B6C2` (teal) — distinct from the green `success` status color.
-- **Documents** → `#61AFEF` (blue).
+- **Documents** → `#C678DD` (purple) — distinct from the logo's `#61AFEF` so the
+  folder icon and wordmark logo each keep their own scannable identity (see §4).
 
 ### 1.4 Architecture
 
@@ -169,7 +170,9 @@ whole terminal background and it fights the user's theme. Instead:
   - Camera (Media) → **`#56B6C2`** (teal, locked — not "warm/teal both"; one
     exact hex). Distinct from the `success` green so iconography reads separately
     from status.
-  - Folder (Documents) → **`#61AFEF`** (blue).
+  - Folder (Documents) → **`#C678DD`** (purple) — deliberately **not** `#61AFEF`
+    so the folder icon stays visually distinct from the wordmark logo (identity
+    elements each keep their own scannable presence).
 - Icons keep a **fixed identity color**, distinct from status-meaning colors, so
   semantics stay scannable.
 
