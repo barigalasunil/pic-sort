@@ -46,32 +46,34 @@ The structure is **always** `YYYY / MonthName / DD` — regardless of which sour
 
 ---
 
-## 🚀 Quick Start — Install & Run
+## 🚀 Installation
 
-### Prerequisites (only once)
+```
+pipx install picsort-cli
+```
 
-Install `pipx` if you don't have it:
+*That's it — installs globally, works from any folder.*
+
+<details>
+<summary><b>Don't have pipx yet?</b></summary>
 
 ```
 python -m pip install --user pipx
 python -m pipx ensurepath
 ```
 
-Close and reopen your terminal afterward (or `pipx ensurepath` adds the needed PATH entry for the next session).
+Then close and reopen your terminal before running the install command above.
 
-### Install
+</details>
 
-```
-pipx install picsort-cli
-```
-
-### Run
+## 💻 Usage
 
 ```
 picsort
 ```
 
-Run `picsort` from any folder, any terminal:
+*Run it from anywhere — no need to be in a specific folder.*
+
 1. Choose a mode: **`[1] Media`** (photos & videos) or **`[2] Documents`** (PDF, Word, Excel, PowerPoint).
 2. First run downloads ExifTool automatically (needs internet once; stored in your per-user app-data folder).
 3. Enter your **source folder(s)** (comma-separated for multiple) and a **destination folder**.
@@ -83,11 +85,15 @@ Run `picsort` from any folder, any terminal:
 pipx upgrade picsort-cli
 ```
 
+Keeps your install on the latest release.
+
 ### Uninstall
 
 ```
 pipx uninstall picsort-cli
 ```
+
+Removes the global install completely.
 
 ---
 

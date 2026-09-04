@@ -49,6 +49,14 @@ def test_build_layout_has_title_and_body():
     assert "body" in names
 
 
+def test_render_text_returns_string():
+    from rich.text import Text as RichText
+    t = RichText("hello world")
+    result = ui._render_text(t)
+    assert isinstance(result, str)
+    assert "hello world" in result
+
+
 def test_title_bar_has_traffic_light_dots_and_title():
     p = ui._title_bar()
     assert isinstance(p, Panel)

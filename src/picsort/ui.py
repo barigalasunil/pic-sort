@@ -40,7 +40,7 @@ def console_print(text="", style="", **kwargs):
 def _render_text(renderable) -> str:
     """Render a rich renderable to plain text via a throwaway Console."""
     from rich.console import Console as _Console
-    tmp = _Console(width=max(80, CONSOLE.width), force_terminal=False)
+    tmp = _Console(width=max(80, CONSOLE.width), force_terminal=False, record=True)
     tmp.print(renderable, end="")
     return tmp.export_text()
 
